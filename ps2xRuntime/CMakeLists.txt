@@ -437,9 +437,19 @@ target_sources(ps2_runtime PRIVATE
     ${KERNEL_SRC_FILES}
 )
 
-file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/*.cpp"
-)
+# PS2X_GENERATED_DIR: pasta EXTERNA com a saida do ps2_recomp (ps2_recompiled_*.h, register_functions.cpp e um .cpp por funcao).
+# Se definida, o runner compila os fontes dela em vez de src/runner/*.cpp, e a arvore do runtime nao e suja com codigo gerado.
+set(PS2X_GENERATED_DIR "" CACHE PATH "External directory holding the ps2_recomp output (optional)")
+if(PS2X_GENERATED_DIR)
+    file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
+        "${PS2X_GENERATED_DIR}/*.cpp"
+    )
+    target_include_directories(ps2_runtime PUBLIC "${PS2X_GENERATED_DIR}")
+else()
+    file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/*.cpp"
+    )
+endif()
 
 set(RUNNER_MAIN_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/main.cpp")
 set(ROOT_MAIN_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
@@ -475,9 +485,14 @@ if(PS2X_ENABLE_RUNNER_PCH)
         "${CMAKE_CURRENT_SOURCE_DIR}/include/ps2_runtime.h"
     )
 
+    if(PS2X_GENERATED_DIR)
+        set(PS2X_RUNNER_GENERATED_HEADER_DIR "${PS2X_GENERATED_DIR}")
+    else()
+        set(PS2X_RUNNER_GENERATED_HEADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    endif()
     foreach(PS2X_RUNNER_GENERATED_HEADER IN ITEMS
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/ps2_recompiled_functions.h"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/ps2_recompiled_stubs.h")
+        "${PS2X_RUNNER_GENERATED_HEADER_DIR}/ps2_recompiled_functions.h"
+        "${PS2X_RUNNER_GENERATED_HEADER_DIR}/ps2_recompiled_stubs.h")
         if(EXISTS "${PS2X_RUNNER_GENERATED_HEADER}")
             list(APPEND PS2X_RUNNER_PCH_HEADERS "${PS2X_RUNNER_GENERATED_HEADER}")
         endif()

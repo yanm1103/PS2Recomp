@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <vector>
 #include "ps2_runtime.h"
 #include "ps2_log.h"
 #include "ps2_stubs.h"
@@ -1342,6 +1344,10 @@ void PS2Runtime::reportMissingFunction(uint8_t *rdram,
     }
 }
 
+#include "rlgl.h"
+#include "wotm_scene.inc"
+static std::vector<uint32_t> g_wotmCov(0x1000000u >> 2, 0);
+
 bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
                                      R5900Context *ctx,
                                      uint32_t targetPc,
@@ -1352,6 +1358,8 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
 {
     ctx->pc = targetPc;
     const bool isCall = (kind == GuestBranchKind::DirectCall || kind == GuestBranchKind::IndirectCall);
+    if (targetPc < 0x1000000u)
+        ++g_wotmCov[targetPc >> 2];
 
     // Every inter-function transfer is also a deterministic EE safe point.
     // Backward edges inside generated functions use eeCheckpointDue(), while
@@ -2443,6 +2451,55 @@ void PS2Runtime::run()
         if (m_debugUiInitialized && m_debugUiDrawCallback)
         {
             m_debugUiDrawCallback(*this, m_debugUiUserData);
+        }
+        {
+            // captura de teste: PS2X_SHOT_FRAMES="300,900,1800" -> shot_<frame>.png (cwd)
+            static long s_frame = 0;
+            ++s_frame;
+            if (std::getenv("PS2X_SCENE"))
+                wotmDrawScene(m_memory.getRDRAM());
+            if (s_frame % 300 == 0 && std::getenv("PS2X_STATS"))
+            {
+                extern std::atomic<unsigned long long> g_wotmGifPackets, g_wotmGifBytes;
+                std::fprintf(stderr, "[wotm] frame %ld gifPackets=%llu gifBytes=%llu\n", s_frame,
+                             g_wotmGifPackets.load(), g_wotmGifBytes.load());
+            }
+            if (s_frame % 600 == 0 && std::getenv("PS2X_STATS") && m_eeScheduler)
+            {
+                const EeKernelSnapshot ks = m_eeScheduler->snapshot();
+                std::fprintf(stderr, "[wotm] --- sched frame %ld running=%d cycle=%llu\n", s_frame, ks.runningThreadId, (unsigned long long)ks.eeCycle);
+                for (const auto &t : ks.threads)
+                    std::fprintf(stderr, "[wotm]  thr %d st=%d wait=%d wid=%d prio=%d pc=%06x ra=%06x entry=%06x inv=%u\n", t.id, (int)t.status,
+                                 (int)t.waitReason, t.waitId, t.currentPriority, t.pc, t.ra, t.entry, t.invocationDepth);
+                for (const auto &s : ks.semaphores)
+                    std::fprintf(stderr, "[wotm]  sema %d count=%d max=%d waiters=%u\n", s.id, s.count, s.maxCount, s.waiters);
+                for (const auto &e : ks.eventFlags)
+                    std::fprintf(stderr, "[wotm]  evf %d bits=%08x waiters=%u\n", e.id, e.bits, e.waiters);
+            }
+            if (const char *cov = std::getenv("PS2X_COVERAGE"))
+            {
+                if (s_frame % 300 == 0)
+                {
+                    const std::string covName = std::string(cov) + "." + std::to_string(s_frame);
+                    FILE *f = std::fopen(covName.c_str(), "w");
+                    if (f)
+                    {
+                        for (uint32_t i = 0; i < g_wotmCov.size(); ++i)
+                            if (g_wotmCov[i])
+                                std::fprintf(f, "0x%06x %u\n", i << 2, g_wotmCov[i]);
+                        std::fclose(f);
+                    }
+                }
+            }
+            if (const char *sf = std::getenv("PS2X_SHOT_FRAMES"))
+            {
+                std::string list = std::string(",") + sf + ",";
+                if (list.find("," + std::to_string(s_frame) + ",") != std::string::npos)
+                {
+                    rlDrawRenderBatchActive(); // o raylib agrupa o desenho em lote; sem isso a captura sai vazia
+                    TakeScreenshot(("shot_" + std::to_string(s_frame) + ".png").c_str());
+                }
+            }
         }
         EndDrawing();
 

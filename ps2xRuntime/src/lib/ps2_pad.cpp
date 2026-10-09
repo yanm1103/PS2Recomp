@@ -1,6 +1,9 @@
 #include "runtime/ps2_pad.h"
 #include "ps2_host_backend.h"
 #include <cstring>
+#include <cstdlib>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -117,6 +120,46 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
             clearBit(PAD_START);
         if (IsKeyDown(KEY_TAB))
             clearBit(PAD_SELECT);
+    }
+
+    // Roteiro de botoes por tempo (teste sem tela): PS2X_PAD="seg:dur:botao;seg:dur:botao;..." (botao: up,down,left,right,cross,circle,square,triangle,l1,r1,l2,r2,start,select)
+    {
+        struct Step { double t0, dur; uint16_t mask; };
+        static std::vector<Step> steps;
+        static bool parsed = false;
+        if (!parsed)
+        {
+            parsed = true;
+            if (const char *env = std::getenv("PS2X_PAD"))
+            {
+                std::string s(env);
+                size_t pos = 0;
+                while (pos < s.size())
+                {
+                    size_t end = s.find(';', pos);
+                    if (end == std::string::npos) end = s.size();
+                    std::string item = s.substr(pos, end - pos);
+                    pos = end + 1;
+                    size_t a = item.find(':'), b = item.find(':', a + 1);
+                    if (a == std::string::npos || b == std::string::npos) continue;
+                    const std::string name = item.substr(b + 1);
+                    uint16_t m = 0;
+                    if (name == "up") m = PAD_UP; else if (name == "down") m = PAD_DOWN; else if (name == "left") m = PAD_LEFT;
+                    else if (name == "right") m = PAD_RIGHT; else if (name == "cross") m = PAD_CROSS; else if (name == "circle") m = PAD_CIRCLE;
+                    else if (name == "square") m = PAD_SQUARE; else if (name == "triangle") m = PAD_TRIANGLE; else if (name == "l1") m = PAD_L1;
+                    else if (name == "r1") m = PAD_R1; else if (name == "l2") m = PAD_L2; else if (name == "r2") m = PAD_R2;
+                    else if (name == "start") m = PAD_START; else if (name == "select") m = PAD_SELECT;
+                    if (m) steps.push_back({std::atof(item.substr(0, a).c_str()), std::atof(item.substr(a + 1, b - a - 1).c_str()), m});
+                }
+            }
+        }
+        if (!steps.empty())
+        {
+            const double now = GetTime();
+            for (const Step &st : steps)
+                if (now >= st.t0 && now < st.t0 + st.dur)
+                    clearBit(st.mask);
+        }
     }
 
     data[2] = static_cast<uint8_t>(btns & 0xFF);

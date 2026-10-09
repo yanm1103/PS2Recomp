@@ -164,6 +164,25 @@ namespace
     }
 }
 
+#include "ps2_runtime_macros.h"
+
+// Hook de teste: pula os filmes (decoder IPU do jogo ainda nao tem backend).
+// Faz o que o fim natural faria: movieRequested=1, movieIsCompletelyFinished=1.
+static void hook_skipMovie(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    WRITE32(0x006F8840u, 1u);
+    WRITE32(0x006F8844u, 1u);
+}
+
+// Corte na fronteira da engine (sem VU1/GS emulado): o VU1 do runtime executa microcodigo invalido e o DMA do VIF1
+// nunca conclui. rtWaitForVu1 esperava objsInPacket|objsInAlphaPacket zerarem (quem zerava era hierDmaHandler).
+static void hook_noop(uint8_t *, R5900Context *, PS2Runtime *) {}
+static void hook_flushObjQ(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+{
+    WRITE32(0x006F87A0u, 0u); // objsInPacket
+    WRITE32(0x006F87A4u, 0u); // objsInAlphaPacket
+}
+
 int main(int argc, char *argv[])
 {
 #if defined(__ANDROID__)
@@ -220,10 +239,32 @@ int main(int argc, char *argv[])
             return 1;
         }
 
+        if (const char *cdImg = std::getenv("PS2X_CD_IMAGE"))
+        {
+            PS2Runtime::IoPaths io = PS2Runtime::getIoPaths();
+            io.cdImage = cdImg;
+            runtime.setIoPaths(io);
+        }
+
         if (!runtime.loadELF(filePathStr))
         {
             std::cerr << "Failed to load ELF file: " << filePathStr << std::endl;
             return 1;
+        }
+
+        if (std::getenv("PS2X_SKIP_MOVIES"))
+        {
+            runtime.registerFunction(0x0020F4B0u, hook_skipMovie); // playMpegMovieWithDB
+            runtime.registerFunction(0x0020F440u, hook_skipMovie); // playMpegMovie
+            runtime.registerFunction(0x0020F540u, hook_skipMovie); // updateMpegMovieDecoding (corpo da thread)
+            std::cout << "[hook] filmes pulados" << std::endl;
+        }
+
+        if (std::getenv("PS2X_NO_VU1"))
+        {
+            runtime.registerFunction(0x00188FD8u, hook_noop);        // rtWaitForVu1
+            runtime.registerFunction(0x00209D88u, hook_flushObjQ);   // hierFlushObjQ (nao dispara o DMA do VIF1)
+            std::cout << "[hook] VU1/DMA do VIF1 cortados (rtWaitForVu1, hierFlushObjQ)" << std::endl;
         }
 
         runtime.run();
