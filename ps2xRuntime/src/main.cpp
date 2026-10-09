@@ -260,6 +260,22 @@ int main(int argc, char *argv[])
             std::cout << "[hook] filmes pulados" << std::endl;
         }
 
+        if (const char *noop = std::getenv("PS2X_NOOP")) // lista de enderecos hex separados por virgula: funcoes viram no-op
+        {
+            std::string s(noop);
+            size_t pos = 0;
+            while (pos < s.size())
+            {
+                size_t end = s.find(',', pos);
+                if (end == std::string::npos) end = s.size();
+                const std::string tok = s.substr(pos, end - pos);
+                pos = end + 1;
+                if (tok.empty()) continue;
+                const uint32_t addr = static_cast<uint32_t>(std::strtoul(tok.c_str(), nullptr, 16));
+                runtime.registerFunction(addr, hook_noop);
+                std::cout << "[hook] no-op em 0x" << std::hex << addr << std::dec << std::endl;
+            }
+        }
         if (std::getenv("PS2X_NO_VU1"))
         {
             runtime.registerFunction(0x00188FD8u, hook_noop);        // rtWaitForVu1

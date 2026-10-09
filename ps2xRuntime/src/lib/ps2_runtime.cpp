@@ -2463,6 +2463,12 @@ void PS2Runtime::run()
                 extern std::atomic<unsigned long long> g_wotmGifPackets, g_wotmGifBytes;
                 std::fprintf(stderr, "[wotm] frame %ld gifPackets=%llu gifBytes=%llu\n", s_frame,
                              g_wotmGifPackets.load(), g_wotmGifBytes.load());
+                {
+                    const auto ds = iopDebugSnapshot();
+                    std::fprintf(stderr, "[iop] t=%.1f iopCycles=%llu iopInstr=%llu threads=%u modules=%u\n", GetTime(),
+                                 (unsigned long long)ds.emulatorCycles, (unsigned long long)ds.emulatorInstructions,
+                                 ds.emulatorThreads, ds.emulatorLoadedModules);
+                }
             }
             if (s_frame % 600 == 0 && std::getenv("PS2X_STATS") && m_eeScheduler)
             {

@@ -643,6 +643,9 @@ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
 {
     g_wotmGifPackets.fetch_add(1, std::memory_order_relaxed);
     g_wotmGifBytes.fetch_add(sizeBytes, std::memory_order_relaxed);
+    static const bool s_noGs = std::getenv("PS2X_NO_GS") != nullptr; // teste: nao rasterizar (o port desenha nativo)
+    if (s_noGs)
+        return;
     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
     if (!data || sizeBytes < 16 || !m_backend)
         return;

@@ -1,6 +1,7 @@
 #include "runtime/ps2_pad.h"
 #include "ps2_host_backend.h"
 #include <cstring>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -156,9 +157,17 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
         if (!steps.empty())
         {
             const double now = GetTime();
+            static uint16_t lastBtns = 0xFFFFu;
+            static unsigned long calls = 0;
+            ++calls;
             for (const Step &st : steps)
                 if (now >= st.t0 && now < st.t0 + st.dur)
                     clearBit(st.mask);
+            if (btns != lastBtns)
+            {
+                std::fprintf(stderr, "[pad] t=%.1f readState#%lu btns=%04x\n", now, calls, btns);
+                lastBtns = btns;
+            }
         }
     }
 
