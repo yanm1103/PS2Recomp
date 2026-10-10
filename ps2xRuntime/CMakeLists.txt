@@ -440,6 +440,11 @@ target_sources(ps2_runtime PRIVATE
 # PS2X_GENERATED_DIR: pasta EXTERNA com a saida do ps2_recomp (ps2_recompiled_*.h, register_functions.cpp e um .cpp por funcao).
 # Se definida, o runner compila os fontes dela em vez de src/runner/*.cpp, e a arvore do runtime nao e suja com codigo gerado.
 set(PS2X_GENERATED_DIR "" CACHE PATH "External directory holding the ps2_recomp output (optional)")
+# WOTM_NATIVE_DIR: pasta native/ do repo WoTM (wotm_native.hpp): habilita o desenho nativo ao vivo (wotm_live.inc)
+set(WOTM_NATIVE_DIR "" CACHE PATH "WoTM native/ directory (optional)")
+if(WOTM_NATIVE_DIR)
+    target_include_directories(ps2_runtime PRIVATE "${WOTM_NATIVE_DIR}")
+endif()
 if(PS2X_GENERATED_DIR)
     file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
         "${PS2X_GENERATED_DIR}/*.cpp"
