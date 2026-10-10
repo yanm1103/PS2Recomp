@@ -638,9 +638,22 @@ bool GS::copyLatchedHostPresentationFrame(std::vector<uint8_t> &outPixels,
     return true;
 }
 
-std::atomic<unsigned long long> g_wotmGifPackets{0}, g_wotmGifBytes{0};
+#include <chrono>
+std::atomic<unsigned long long> g_wotmGifPackets{0}, g_wotmGifBytes{0}, g_wotmGifUs{0};
+namespace {
+struct WotmScopedUs
+{
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    ~WotmScopedUs()
+    {
+        g_wotmGifUs.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count(),
+                              std::memory_order_relaxed);
+    }
+};
+} // namespace
 void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
 {
+    WotmScopedUs wotmTimer;
     g_wotmGifPackets.fetch_add(1, std::memory_order_relaxed);
     g_wotmGifBytes.fetch_add(sizeBytes, std::memory_order_relaxed);
     static const bool s_noGs = std::getenv("PS2X_NO_GS") != nullptr; // teste: nao rasterizar (o port desenha nativo)

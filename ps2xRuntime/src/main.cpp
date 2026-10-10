@@ -177,6 +177,7 @@ static void hook_skipMovie(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtim
 // Corte na fronteira da engine (sem VU1/GS emulado): o VU1 do runtime executa microcodigo invalido e o DMA do VIF1
 // nunca conclui. rtWaitForVu1 esperava objsInPacket|objsInAlphaPacket zerarem (quem zerava era hierDmaHandler).
 static void hook_noop(uint8_t *, R5900Context *, PS2Runtime *) {}
+static void hook_ret1(uint8_t *, R5900Context *ctx, PS2Runtime *) { setReturnS32(ctx, 1); } // CMovie::Update: "terminou"
 static void hook_flushObjQ(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
 {
     WRITE32(0x006F87A0u, 0u); // objsInPacket
@@ -258,6 +259,12 @@ int main(int argc, char *argv[])
             runtime.registerFunction(0x0020F440u, hook_skipMovie); // playMpegMovie
             runtime.registerFunction(0x0020F540u, hook_skipMovie); // updateMpegMovieDecoding (corpo da thread)
             std::cout << "[hook] filmes pulados" << std::endl;
+        }
+        if (std::getenv("PS2X_SKIP_CMOVIE")) // caminho CMovie (menu): Play vira no-op, Update devolve 1
+        {
+            runtime.registerFunction(0x00210090u, hook_noop); // CMovie::Play
+            runtime.registerFunction(0x00210408u, hook_ret1); // CMovie::Update
+            std::cout << "[hook] CMovie::Play/Update pulados" << std::endl;
         }
 
         if (const char *noop = std::getenv("PS2X_NOOP")) // lista de enderecos hex separados por virgula: funcoes viram no-op

@@ -4,10 +4,26 @@
 #include "ps2_runtime_macros.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cassert>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+extern std::atomic<unsigned long long> g_wotmIdleUs, g_wotmIdleCalls, g_wotmPaceUs, g_wotmPaceCalls;
+namespace {
+struct WotmUsTimer
+{
+    std::atomic<unsigned long long> &acc;
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    explicit WotmUsTimer(std::atomic<unsigned long long> &a) : acc(a) {}
+    ~WotmUsTimer()
+    {
+        acc.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count(),
+                      std::memory_order_relaxed);
+    }
+};
+}
 
 namespace
 {
@@ -1800,6 +1816,8 @@ void EeScheduler::processDueDeadlines()
 
             if (now < pacingDeadline)
             {
+                WotmUsTimer wotmPaceTimer(g_wotmPaceUs);
+                g_wotmPaceCalls.fetch_add(1, std::memory_order_relaxed);
                 m_eventCv.wait_until(lock, pacingDeadline, [this]()
                                      { return !m_events.empty() ||
                                               m_stopRequested.load(std::memory_order_acquire); });
@@ -1994,8 +2012,11 @@ void EeScheduler::writeGuestU32(uint32_t address, uint32_t value)
     std::memcpy(m_rdram + physical, &value, sizeof(value));
 }
 
+std::atomic<unsigned long long> g_wotmIdleUs{0}, g_wotmIdleCalls{0}, g_wotmPaceUs{0}, g_wotmPaceCalls{0};
 void EeScheduler::waitForEvent()
 {
+    WotmUsTimer wotmIdleTimer(g_wotmIdleUs);
+    g_wotmIdleCalls.fetch_add(1, std::memory_order_relaxed);
     std::unique_lock lock(m_eventMutex);
     if (!m_events.empty() || m_stopRequested.load(std::memory_order_acquire))
     {

@@ -1802,8 +1802,11 @@ void PS2Memory::processPendingTransfers()
     m_pendingVif0Transfers.clear();
 
     const bool hadVif1 = !m_pendingVif1Transfers.empty();
+    static const bool s_noVif1 = std::getenv("PS2X_NO_VIF1") != nullptr; // teste: nao executar VU1/VIF1 (o port desenha nativo)
     for (auto &p : m_pendingVif1Transfers)
     {
+        if (s_noVif1)
+            continue;
         if (!p.chainData.empty())
         {
             processVIF1Data(p.chainData.data(), static_cast<uint32_t>(p.chainData.size()));

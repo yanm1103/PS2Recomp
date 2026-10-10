@@ -1348,6 +1348,7 @@ void PS2Runtime::reportMissingFunction(uint8_t *rdram,
 #include "wotm_scene.inc"
 static std::vector<uint32_t> g_wotmCov(0x1000000u >> 2, 0);
 
+std::atomic<R5900Context *> g_wotmLiveCtx{nullptr};
 bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
                                      R5900Context *ctx,
                                      uint32_t targetPc,
@@ -1357,6 +1358,7 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
                                      const char *debugName)
 {
     ctx->pc = targetPc;
+    g_wotmLiveCtx.store(ctx, std::memory_order_relaxed);
     const bool isCall = (kind == GuestBranchKind::DirectCall || kind == GuestBranchKind::IndirectCall);
     if (targetPc < 0x1000000u)
         ++g_wotmCov[targetPc >> 2];
@@ -2430,7 +2432,11 @@ void PS2Runtime::run()
         });
         uint32_t presentWidth = FB_WIDTH;
         uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
+        static unsigned long long s_upUs = 0, s_drawUs = 0;
+        const auto wotmT0 = std::chrono::steady_clock::now();
         UploadFrame(frameTex, this, presentWidth, presentHeight);
+        const auto wotmT1 = std::chrono::steady_clock::now();
+        s_upUs += std::chrono::duration_cast<std::chrono::microseconds>(wotmT1 - wotmT0).count();
 
         BeginDrawing();
         ClearBackground(BLACK);
@@ -2458,8 +2464,66 @@ void PS2Runtime::run()
             ++s_frame;
             if (std::getenv("PS2X_SCENE"))
                 wotmDrawScene(m_memory.getRDRAM());
+            if (std::getenv("PS2X_PROF")) // amostrador de PC: histograma por palavra, gravado em prof.<frame>
+            {
+                static std::unordered_map<uint32_t, uint32_t> s_hist;
+                static std::mutex s_histMx;
+                static std::atomic<uint64_t> s_samples{0}, s_failed{0};
+                static bool s_started = false;
+                if (!s_started)
+                {
+                    s_started = true;
+                    std::thread([this]() {
+                        for (;;)
+                        {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                            bool ok = false;
+                            if (R5900Context *lc = g_wotmLiveCtx.load(std::memory_order_relaxed))
+                            {
+                                const uint32_t pc = lc->pc;
+                                std::lock_guard<std::mutex> lk(s_histMx);
+                                ++s_hist[pc];
+                                ok = true;
+                            }
+                            if (ok) ++s_samples; else ++s_failed;
+                        }
+                    }).detach();
+                }
+                if (s_frame % 600 == 0)
+                {
+                    std::lock_guard<std::mutex> lk(s_histMx);
+                    const std::string pn = std::string("prof.") + std::to_string(s_frame);
+                    if (FILE *f = std::fopen(pn.c_str(), "w"))
+                    {
+                        std::fprintf(f, "# samples=%llu norunning=%llu\n", (unsigned long long)s_samples.load(), (unsigned long long)s_failed.load());
+                        for (const auto &kv : s_hist) std::fprintf(f, "0x%06x %u\n", kv.first, kv.second);
+                        std::fclose(f);
+                    }
+                }
+            }
             if (s_frame % 300 == 0 && std::getenv("PS2X_STATS"))
             {
+                {
+                    const uint8_t *rd = m_memory.getRDRAM();
+                    auto rw = [&](uint32_t a) { uint32_t v; std::memcpy(&v, rd + a, 4); return v; };
+                    if (const char *pk = std::getenv("PS2X_PEEK")) // "6F8464,6F8080,..." palavras da RDRAM (hex)
+                    {
+                        std::string s(pk);
+                        std::fprintf(stderr, "[peek] f=%ld", s_frame);
+                        size_t p = 0;
+                        while (p < s.size())
+                        {
+                            size_t e = s.find(',', p);
+                            if (e == std::string::npos) e = s.size();
+                            const uint32_t a = static_cast<uint32_t>(std::strtoul(s.substr(p, e - p).c_str(), nullptr, 16));
+                            p = e + 1;
+                            if (a && a + 4 <= PS2_RAM_SIZE) std::fprintf(stderr, " %x=%08x", a, rw(a));
+                        }
+                        std::fprintf(stderr, "\n");
+                    }
+                    std::fprintf(stderr, "[ui] currScreen=%u next=%d between=%u select=%d firstPass=%u exitUi=%u movieReq=%u\n", rw(0x6F8464),
+                                 (int)rw(0x6F846C), rw(0x6F7E8C), (int)rw(0x6F84A8), rw(0x6F7E80), rw(0x6F84B0), rw(0x6F8840));
+                }
                 extern std::atomic<unsigned long long> g_wotmGifPackets, g_wotmGifBytes;
                 std::fprintf(stderr, "[wotm] frame %ld gifPackets=%llu gifBytes=%llu\n", s_frame,
                              g_wotmGifPackets.load(), g_wotmGifBytes.load());
@@ -2508,6 +2572,28 @@ void PS2Runtime::run()
             }
         }
         EndDrawing();
+        s_drawUs += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - wotmT1).count();
+        {
+            static long s_n = 0;
+            if (++s_n % 300 == 0 && std::getenv("PS2X_STATS"))
+            {
+                extern std::atomic<unsigned long long> g_wotmGifUs;
+                std::fprintf(stderr, "[time] t=%.1f frames=%ld uploadMs=%llu drawMs=%llu gifMs=%llu\n", GetTime(), s_n, s_upUs / 1000,
+                             s_drawUs / 1000, g_wotmGifUs.load() / 1000);
+                if (m_eeScheduler)
+                {
+                    const EeKernelSnapshot ks2 = m_eeScheduler->snapshot();
+                    std::fprintf(stderr, "[time]   vsyncTick=%llu eeCycle=%llu run=%d", (unsigned long long)m_eeScheduler->currentVSyncTick(),
+                                 (unsigned long long)ks2.eeCycle, ks2.runningThreadId);
+                    for (const auto &t : ks2.threads)
+                        std::fprintf(stderr, " | thr%d st=%d wait=%d pc=%06x", t.id, (int)t.status, (int)t.waitReason, t.pc);
+                    std::fprintf(stderr, "\n");
+                    extern std::atomic<unsigned long long> g_wotmIdleUs, g_wotmIdleCalls, g_wotmPaceUs, g_wotmPaceCalls;
+                    std::fprintf(stderr, "[time]   idleMs=%llu (%llu calls) paceMs=%llu (%llu calls)\n", g_wotmIdleUs.load() / 1000,
+                                 g_wotmIdleCalls.load(), g_wotmPaceUs.load() / 1000, g_wotmPaceCalls.load());
+                }
+            }
+        }
 
         if (WindowShouldClose())
         {
