@@ -283,10 +283,11 @@ int main(int argc, char *argv[])
                 std::cout << "[hook] no-op em 0x" << std::hex << addr << std::dec << std::endl;
             }
         }
-        if (std::getenv("PS2X_NO_VU1"))
+        if (const char *nv = std::getenv("PS2X_NO_VU1"))
         {
             runtime.registerFunction(0x00188FD8u, hook_noop);        // rtWaitForVu1
-            runtime.registerFunction(0x00209D88u, hook_flushObjQ);   // hierFlushObjQ (nao dispara o DMA do VIF1)
+            if (nv[0] != '2') // PS2X_NO_VU1=2: o DMA do quadro segue (PS2X_VIF1_UPLOADS leva as texturas/CLUTs ao GS) sem esperar o VU1
+                runtime.registerFunction(0x00209D88u, hook_flushObjQ);   // hierFlushObjQ (nao dispara o DMA do VIF1)
             std::cout << "[hook] VU1/DMA do VIF1 cortados (rtWaitForVu1, hierFlushObjQ)" << std::endl;
         }
 

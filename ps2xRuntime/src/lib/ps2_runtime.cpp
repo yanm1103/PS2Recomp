@@ -2570,6 +2570,29 @@ void PS2Runtime::run()
                     TakeScreenshot(("shot_" + std::to_string(s_frame) + ".png").c_str());
                 }
             }
+            if (const char *df = std::getenv("PS2X_DUMP_RAM")) // "600,900": grava a RAM do EE em ram_<frame>.bin (cwd), para o visualizador nativo
+            {
+                const std::string dl = std::string(",") + df + ",";
+                if (dl.find("," + std::to_string(s_frame) + ",") != std::string::npos)
+                {
+                    if (FILE *rf = std::fopen(("ram_" + std::to_string(s_frame) + ".bin").c_str(), "wb"))
+                    {
+                        std::fwrite(m_memory.getRDRAM(), 1, PS2_RAM_SIZE, rf);
+                        std::fclose(rf);
+                    }
+                    m_gs.refreshDisplaySnapshot(); // VRAM do GS (texturas enviadas por upload): vram_<frame>.bin
+                    uint32_t vramSize = 0;
+                    if (const uint8_t *vram = m_gs.lockDisplaySnapshot(vramSize))
+                    {
+                        if (FILE *vf = std::fopen(("vram_" + std::to_string(s_frame) + ".bin").c_str(), "wb"))
+                        {
+                            std::fwrite(vram, 1, vramSize, vf);
+                            std::fclose(vf);
+                        }
+                    }
+                    m_gs.unlockDisplaySnapshot();
+                }
+            }
         }
         EndDrawing();
         s_drawUs += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - wotmT1).count();

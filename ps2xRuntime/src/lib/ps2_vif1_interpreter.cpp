@@ -1,4 +1,5 @@
 // Based on Blackline Interactive implementation
+#include <cstdlib>
 #include "runtime/ps2_memory.h"
 #include <cstring>
 
@@ -416,7 +417,8 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                 vif1_regs.tops = (vif1_regs.base + vif1_regs.ofst) & 0x3FFu;
             vif1_regs.stat ^= (1u << 7); // toggle DBF
 
-            if (m_vu1MscalCallback)
+            static const bool s_noVuExec = std::getenv("PS2X_NO_VIF1") != nullptr; // NO_VIF1: nao executa microprogramas
+            if (m_vu1MscalCallback && !s_noVuExec)
                 m_vu1MscalCallback(startPC, runTop, runItop);
             continue;
         }
@@ -434,7 +436,8 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                 vif1_regs.tops = (vif1_regs.base + vif1_regs.ofst) & 0x3FFu;
             vif1_regs.stat ^= (1u << 7); // toggle DBF
 
-            if (m_vu1MscntCallback)
+            static const bool s_noVuExec2 = std::getenv("PS2X_NO_VIF1") != nullptr;
+            if (m_vu1MscntCallback && !s_noVuExec2)
                 m_vu1MscntCallback(runTop, runItop);
             continue;
         }

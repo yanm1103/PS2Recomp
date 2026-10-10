@@ -657,7 +657,8 @@ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
     g_wotmGifPackets.fetch_add(1, std::memory_order_relaxed);
     g_wotmGifBytes.fetch_add(sizeBytes, std::memory_order_relaxed);
     static const bool s_noGs = std::getenv("PS2X_NO_GS") != nullptr; // teste: nao rasterizar (o port desenha nativo)
-    if (s_noGs)
+    static const bool s_uploads = std::getenv("PS2X_GS_UPLOADS") != nullptr; // com NO_GS: processa so os uploads (texturas na VRAM)
+    if (s_noGs && !s_uploads)
         return;
     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
     if (!data || sizeBytes < 16 || !m_backend)
@@ -1591,7 +1592,8 @@ void GS::vertexKick(bool drawing)
     if (m_vtxCount < needed)
         return;
 
-    if (drawing && m_backend)
+    static const bool s_noDraw = std::getenv("PS2X_NO_GS") != nullptr; // NO_GS + GS_UPLOADS: so uploads, sem rasterizar
+    if (drawing && m_backend && !s_noDraw)
     {
         GSPrimitiveBatch batch = buildDrawBatch(needed);
         updatePreferredDisplaySourceForDraw(batch);

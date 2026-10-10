@@ -1803,9 +1803,10 @@ void PS2Memory::processPendingTransfers()
 
     const bool hadVif1 = !m_pendingVif1Transfers.empty();
     static const bool s_noVif1 = std::getenv("PS2X_NO_VIF1") != nullptr; // teste: nao executar VU1/VIF1 (o port desenha nativo)
+    static const bool s_vif1Uploads = std::getenv("PS2X_VIF1_UPLOADS") != nullptr; // com NO_VIF1: processa a cadeia (uploads de textura/CLUT por DIRECT) sem executar o VU1
     for (auto &p : m_pendingVif1Transfers)
     {
-        if (s_noVif1)
+        if (s_noVif1 && !s_vif1Uploads)
             continue;
         if (!p.chainData.empty())
         {
