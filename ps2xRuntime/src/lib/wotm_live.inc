@@ -141,6 +141,8 @@ static bool wotmDrawNative(const uint8_t *rdram)
     S.scene.draw(ram, false);
     wotm_live::g_stage = "idle";
     EndMode3D();
+    S.scene.updateText(ram);   // texto do jogo (menu de pausa, HUD): sprites do GS lidos de fontPacket
+    S.scene.drawText(ram, static_cast<float>(RW), static_cast<float>(RH));
     EndTextureMode();
 
     // letterbox 4:3 na janela

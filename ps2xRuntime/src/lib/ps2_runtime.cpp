@@ -1010,6 +1010,10 @@ bool PS2Runtime::loadELF(const std::string &elfPath)
                                       m_cpuContext.pc,
                                       elfCrc32,
                                       elfCrc32Valid);
+    {
+        extern void wotmInstallOverrides(PS2Runtime &runtime, const std::string &elfPath);
+        wotmInstallOverrides(*this, elfPath);   // correcoes especificas do WotM (wotm_overrides.cpp)
+    }
 
     RUNTIME_LOG("ELF file loaded successfully. Entry point: 0x" << std::hex << m_cpuContext.pc << std::dec);
     return true;
